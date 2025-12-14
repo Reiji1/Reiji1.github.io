@@ -1,0 +1,7 @@
+{
+  "name": "jammming-spa",
+  "version": "1.0.0",
+  "description": "React + Spotify Web API playlist builder ready for static hosting.",
+  "license": "MIT",
+  "private": true
+}
