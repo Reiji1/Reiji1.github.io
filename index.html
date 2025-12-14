@@ -1,9 +1,338 @@
-<html>
- 
-<body>
-  <h1>Kassym-Nazar</h1>
-  <p>Welcome to my website!</p>
-  <img src="https://content.codecademy.com/articles/github-pages-via-web-app/happy-ice-cream.gif" />
-</body>
- 
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jammming | Spotify Playlist Builder</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useState } = React;
+
+      const SCOPES = [
+        'playlist-modify-public',
+        'playlist-modify-private',
+        'user-read-email',
+        'user-read-private'
+      ];
+
+      const Track = ({ track, actionLabel, onAction }) => {
+        const handleClick = () => onAction(track);
+        return (
+          <div className="track">
+            <div>
+              <p className="track__title">{track.name}</p>
+              <p className="track__meta">{track.artists?.join(', ')} • {track.album}</p>
+            </div>
+            {actionLabel && (
+              <button className="button button--ghost" onClick={handleClick} aria-label={`${actionLabel} ${track.name}`}>
+                {actionLabel}
+              </button>
+            )}
+          </div>
+        );
+      };
+
+      const TrackList = ({ title, tracks, emptyMessage, actionLabel, onAction }) => (
+        <section className="panel">
+          <div className="panel__header">
+            <h2>{title}</h2>
+            <span className="badge">{tracks.length}</span>
+          </div>
+          {tracks.length === 0 ? (
+            <p className="panel__empty">{emptyMessage}</p>
+          ) : (
+            <ul className="tracklist" aria-label={title}>
+              {tracks.map((track) => (
+                <li key={track.id}>
+                  <Track track={track} actionLabel={actionLabel} onAction={onAction} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      );
+
+      const SearchBar = ({ term, onTermChange, onSearch, disabled }) => {
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          onSearch();
+        };
+
+        return (
+          <form className="search" onSubmit={handleSubmit}>
+            <label className="search__label" htmlFor="search-term">Search Spotify</label>
+            <div className="search__controls">
+              <input
+                id="search-term"
+                name="search-term"
+                type="search"
+                value={term}
+                onChange={(e) => onTermChange(e.target.value)}
+                placeholder="Try a song, artist, or album"
+              />
+              <button className="button" type="submit" disabled={disabled}>
+                Search
+              </button>
+            </div>
+          </form>
+        );
+      };
+
+      const ConnectionPanel = ({ clientId, onClientIdChange, onAuthorize, isAuthorized }) => (
+        <section className="panel">
+          <h2>Connect to Spotify</h2>
+          <p className="panel__body">
+            Add your Spotify Client ID so Jammming can request permission to create playlists on your behalf. Client IDs never leave your browser.
+          </p>
+          <label className="field">
+            <span className="field__label">Spotify Client ID</span>
+            <input
+              type="text"
+              value={clientId}
+              onChange={(e) => onClientIdChange(e.target.value)}
+              placeholder="Paste your app's Client ID"
+            />
+          </label>
+          <button className="button" type="button" onClick={onAuthorize} disabled={!clientId}>
+            {isAuthorized ? 'Re-authorize' : 'Authorize with Spotify'}
+          </button>
+          <p className="hint">
+            Create a free app at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">developer.spotify.com/dashboard</a> and add this page's URL as a redirect URI.
+          </p>
+        </section>
+      );
+
+      const PlaylistForm = ({ name, onNameChange, onSave, disabled }) => (
+        <div className="playlist-form">
+          <label className="field">
+            <span className="field__label">Playlist name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="New Playlist"
+              disabled={disabled}
+            />
+          </label>
+          <button className="button" type="button" onClick={onSave} disabled={disabled || !name.trim()}>
+            Save to Spotify
+          </button>
+        </div>
+      );
+
+      const useSpotifyAuthorization = () => {
+        const [accessToken, setAccessToken] = useState('');
+        const [expiresAt, setExpiresAt] = useState(null);
+
+        useEffect(() => {
+          const hash = window.location.hash.slice(1);
+          const params = new URLSearchParams(hash);
+          const token = params.get('access_token');
+          const expiresIn = params.get('expires_in');
+          if (token) {
+            const expiry = Date.now() + Number(expiresIn) * 1000;
+            setAccessToken(token);
+            setExpiresAt(expiry);
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+            localStorage.setItem('spotify_access_token', token);
+            localStorage.setItem('spotify_token_expiry', expiry.toString());
+          } else {
+            const storedToken = localStorage.getItem('spotify_access_token');
+            const storedExpiry = Number(localStorage.getItem('spotify_token_expiry'));
+            if (storedToken && storedExpiry && storedExpiry > Date.now()) {
+              setAccessToken(storedToken);
+              setExpiresAt(storedExpiry);
+            }
+          }
+        }, []);
+
+        const isAuthorized = useMemo(() => Boolean(accessToken && expiresAt && expiresAt > Date.now()), [accessToken, expiresAt]);
+
+        return { accessToken: isAuthorized ? accessToken : '', isAuthorized, setAccessToken };
+      };
+
+      const App = () => {
+        const [searchTerm, setSearchTerm] = useState('');
+        const [searchResults, setSearchResults] = useState([]);
+        const [playlistName, setPlaylistName] = useState('New Playlist');
+        const [playlistTracks, setPlaylistTracks] = useState([]);
+        const [status, setStatus] = useState('');
+        const [loading, setLoading] = useState(false);
+        const [clientId, setClientId] = useState(() => localStorage.getItem('spotify_client_id') || '');
+        const redirectUri = useMemo(() => window.location.origin + window.location.pathname, []);
+        const { accessToken, isAuthorized } = useSpotifyAuthorization();
+
+        useEffect(() => {
+          localStorage.setItem('spotify_client_id', clientId);
+        }, [clientId]);
+
+        const authorizeWithSpotify = () => {
+          if (!clientId) return;
+          const authUrl = new URL('https://accounts.spotify.com/authorize');
+          authUrl.searchParams.set('client_id', clientId);
+          authUrl.searchParams.set('response_type', 'token');
+          authUrl.searchParams.set('redirect_uri', redirectUri);
+          authUrl.searchParams.set('scope', SCOPES.join(' '));
+          authUrl.searchParams.set('state', Math.random().toString(36).slice(2));
+          window.location.href = authUrl.toString();
+        };
+
+        const handleSearch = async () => {
+          if (!accessToken) {
+            setStatus('Connect to Spotify to search the catalog.');
+            return;
+          }
+          if (!searchTerm.trim()) return;
+          setLoading(true);
+          setStatus('Searching Spotify...');
+          try {
+            const response = await fetch(`https://api.spotify.com/v1/search?type=track&q=${encodeURIComponent(searchTerm)}`, {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (!response.ok) throw new Error('Spotify search failed');
+            const data = await response.json();
+            const tracks = (data.tracks?.items || []).map((track) => ({
+              id: track.id,
+              name: track.name,
+              album: track.album?.name,
+              artists: track.artists?.map((artist) => artist.name) || [],
+              uri: track.uri
+            }));
+            setSearchResults(tracks);
+            setStatus(tracks.length === 0 ? 'No results found.' : `Found ${tracks.length} tracks.`);
+          } catch (error) {
+            setStatus('Unable to search right now. Check your token and try again.');
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const addTrack = (track) => {
+          if (playlistTracks.some((t) => t.id === track.id)) return;
+          setPlaylistTracks((prev) => [...prev, track]);
+        };
+
+        const removeTrack = (track) => {
+          setPlaylistTracks((prev) => prev.filter((t) => t.id !== track.id));
+        };
+
+        const savePlaylist = async () => {
+          if (!accessToken || playlistTracks.length === 0) {
+            setStatus('Add songs and ensure you are connected to Spotify.');
+            return;
+          }
+          setLoading(true);
+          setStatus('Saving playlist to Spotify...');
+          try {
+            const profileResponse = await fetch('https://api.spotify.com/v1/me', {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (!profileResponse.ok) throw new Error('Unable to fetch profile');
+            const profile = await profileResponse.json();
+
+            const playlistResponse = await fetch(`https://api.spotify.com/v1/users/${profile.id}/playlists`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ name: playlistName || 'New Playlist', public: false })
+            });
+            if (!playlistResponse.ok) throw new Error('Unable to create playlist');
+            const playlist = await playlistResponse.json();
+
+            const addTracksResponse = await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ uris: playlistTracks.map((track) => track.uri) })
+            });
+            if (!addTracksResponse.ok) throw new Error('Unable to add tracks');
+
+            setPlaylistTracks([]);
+            setPlaylistName('New Playlist');
+            setStatus('Playlist saved to your Spotify account!');
+          } catch (error) {
+            setStatus('Failed to save playlist. Please re-authorize and try again.');
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        return (
+          <div className="page">
+            <header className="hero">
+              <div>
+                <p className="eyebrow">Jammming</p>
+                <h1>Create and save playlists from Spotify search results.</h1>
+                <p className="lede">
+                  Search by song, artist, or album. Build a custom playlist and export it directly to your Spotify account.
+                </p>
+              </div>
+            </header>
+
+            <main className="layout">
+              <div className="layout__column layout__column--narrow">
+                <ConnectionPanel
+                  clientId={clientId}
+                  onClientIdChange={setClientId}
+                  onAuthorize={authorizeWithSpotify}
+                  isAuthorized={isAuthorized}
+                />
+                <SearchBar term={searchTerm} onTermChange={setSearchTerm} onSearch={handleSearch} disabled={loading} />
+                <section className="panel status" aria-live="polite">{status || 'Waiting for your next search.'}</section>
+              </div>
+
+              <div className="layout__column layout__column--wide">
+                <TrackList
+                  title="Search Results"
+                  tracks={searchResults}
+                  emptyMessage={accessToken ? 'Start by searching for your favorite tracks.' : 'Authorize with Spotify to search.'}
+                  actionLabel="Add"
+                  onAction={addTrack}
+                />
+
+                <section className="panel">
+                  <div className="panel__header">
+                    <h2>Your Playlist</h2>
+                    <span className="badge">{playlistTracks.length}</span>
+                  </div>
+                  <PlaylistForm name={playlistName} onNameChange={setPlaylistName} onSave={savePlaylist} disabled={loading} />
+                  {playlistTracks.length === 0 ? (
+                    <p className="panel__empty">Add tracks from the search results to build your playlist.</p>
+                  ) : (
+                    <ul className="tracklist" aria-label="Playlist tracks">
+                      {playlistTracks.map((track) => (
+                        <li key={track.id}>
+                          <Track track={track} actionLabel="Remove" onAction={removeTrack} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            </main>
+          </div>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
 </html>
